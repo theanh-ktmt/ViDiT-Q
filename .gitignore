@@ -182,3 +182,4 @@ hostfile
 
 # My ignores
 *.save*
+DeepFloyd/*

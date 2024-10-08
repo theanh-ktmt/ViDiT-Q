@@ -109,6 +109,11 @@ def main():
     os.makedirs(save_dir, exist_ok=True)
     # assert len(prompts) % cfg.batch_size == 0, "no specified handling of drop_last, may cause errors"  # no handling of drop last
     for i in range(0, len(prompts), cfg.batch_size):
+        print(
+            "========== Prompt {}->{} / {} ==========".format(
+                i, i + cfg.batch_size - 1, len(prompts)
+            )
+        )
         batch_prompts = prompts[i : i + cfg.batch_size]
         if (
             cfg.get("precompute_text_embeds", None) is not None
@@ -117,6 +122,7 @@ def main():
 
         num_samples = cfg.get("num_samples", 1)
         for k in range(num_samples):
+            print("> Processing sample {}th...".format(k + 1))
             save_paths = [
                 get_save_path_name(
                     save_dir,

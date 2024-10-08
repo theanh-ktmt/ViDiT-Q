@@ -78,46 +78,46 @@ class IDDPM(SpacedDiffusion):
         z = torch.cat([z, z], 0)
 
         # INFO: support loading precomputed text_embeds
-        if additional_args is not None:
-            if "precompute_text_embeds" in additional_args.keys():
-                choose_idx = additional_args["batch_ids"]
-                model_args = additional_args["precompute_text_embeds"].copy()
-                text_embeds_shape = model_args["y"].shape
-                # handling of drop_last
-                if choose_idx.max() > text_embeds_shape[0]:
-                    model_args["y"] = (
-                        model_args["y"][choose_idx[0] :, :]
-                        .permute([1, 0, 2, 3, 4])
-                        .reshape(
-                            [
-                                -1,
-                                text_embeds_shape[2],
-                                text_embeds_shape[3],
-                                text_embeds_shape[4],
-                            ]
-                        )
+        if (
+            additional_args is not None
+            and "precompute_text_embeds" in additional_args.keys()
+        ):
+            choose_idx = additional_args["batch_ids"]
+            model_args = additional_args["precompute_text_embeds"].copy()
+            text_embeds_shape = model_args["y"].shape
+            # handling of drop_last
+            if choose_idx.max() > text_embeds_shape[0]:
+                model_args["y"] = (
+                    model_args["y"][choose_idx[0] :, :]
+                    .permute([1, 0, 2, 3, 4])
+                    .reshape(
+                        [
+                            -1,
+                            text_embeds_shape[2],
+                            text_embeds_shape[3],
+                            text_embeds_shape[4],
+                        ]
                     )
-                    model_args["mask"] = model_args["mask"][choose_idx[0] :, :]
-                else:
-                    model_args["y"] = (
-                        model_args["y"][choose_idx, :]
-                        .permute([1, 0, 2, 3, 4])
-                        .reshape(
-                            [
-                                len(choose_idx) * text_embeds_shape[1],
-                                text_embeds_shape[2],
-                                text_embeds_shape[3],
-                                text_embeds_shape[4],
-                            ]
-                        )
-                    )
-                    model_args["mask"] = model_args["mask"][choose_idx, :]
+                )
+                model_args["mask"] = model_args["mask"][choose_idx[0] :, :]
             else:
-                model_args = text_encoder.encode(prompts)
-                y_null = text_encoder.null(n)
-                model_args["y"] = torch.cat([model_args["y"], y_null], 0)
+                model_args["y"] = (
+                    model_args["y"][choose_idx, :]
+                    .permute([1, 0, 2, 3, 4])
+                    .reshape(
+                        [
+                            len(choose_idx) * text_embeds_shape[1],
+                            text_embeds_shape[2],
+                            text_embeds_shape[3],
+                            text_embeds_shape[4],
+                        ]
+                    )
+                )
+                model_args["mask"] = model_args["mask"][choose_idx, :]
+
         else:
             model_args = text_encoder.encode(prompts)
+            # print("Text encoder output dtype:", model_args["y"].dtype)
             y_null = text_encoder.null(n)
             model_args["y"] = torch.cat([model_args["y"], y_null], 0)
 

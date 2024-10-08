@@ -2,17 +2,12 @@ import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-# for profiling
-import os
-# import nvtx
-
 from einops import rearrange
-from timm.models.layers import DropPath
-# from timm.models.vision_transformer import Mlp
-from .modules import Mlp
-
 from opensora.acceleration.checkpoint import auto_grad_checkpoint
-from opensora.acceleration.communications import gather_forward_split_backward, split_forward_gather_backward
+from opensora.acceleration.communications import (
+    gather_forward_split_backward,
+    split_forward_gather_backward,
+)
 from opensora.acceleration.parallel_states import get_sequence_parallel_group
 from opensora.models.layers.blocks import (
     Attention,
@@ -31,6 +26,13 @@ from opensora.models.layers.blocks import (
 )
 from opensora.registry import MODELS
 from opensora.utils.ckpt_utils import load_checkpoint
+from timm.models.layers import DropPath
+
+# from timm.models.vision_transformer import Mlp
+from .modules import Mlp
+
+# for profiling
+# import nvtx
 
 
 class STDiTBlock(nn.Module):
@@ -59,7 +61,9 @@ class STDiTBlock(nn.Module):
             self.attn_cls = Attention
             self.mha_cls = MultiHeadCrossAttention
 
-        self.norm1 = get_layernorm(hidden_size, eps=1e-6, affine=False, use_kernel=enable_layernorm_kernel)
+        self.norm1 = get_layernorm(
+            hidden_size, eps=1e-6, affine=False, use_kernel=enable_layernorm_kernel
+        )
         self.attn = self.attn_cls(
             hidden_size,
             num_heads=num_heads,
@@ -68,12 +72,19 @@ class STDiTBlock(nn.Module):
             separate_qkv=separate_qkv,
         )
         self.cross_attn = self.mha_cls(hidden_size, num_heads)
-        self.norm2 = get_layernorm(hidden_size, eps=1e-6, affine=False, use_kernel=enable_layernorm_kernel)
+        self.norm2 = get_layernorm(
+            hidden_size, eps=1e-6, affine=False, use_kernel=enable_layernorm_kernel
+        )
         self.mlp = Mlp(
-            in_features=hidden_size, hidden_features=int(hidden_size * mlp_ratio), act_layer=approx_gelu, drop=0
+            in_features=hidden_size,
+            hidden_features=int(hidden_size * mlp_ratio),
+            act_layer=approx_gelu,
+            drop=0,
         )
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.scale_shift_table = nn.Parameter(torch.randn(6, hidden_size) / hidden_size**0.5)
+        self.scale_shift_table = nn.Parameter(
+            torch.randn(6, hidden_size) / hidden_size**0.5
+        )
 
         # temporal attention
         self.d_s = d_s
@@ -94,7 +105,6 @@ class STDiTBlock(nn.Module):
         )
 
     def forward(self, x, y, t, mask=None, tpe=None, set_ipdb=False):
-
         B, N, C = x.shape
 
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
@@ -121,14 +131,23 @@ class STDiTBlock(nn.Module):
         x = x + self.cross_attn(x, y, mask)
 
         # mlp
-        output = self.drop_path(gate_mlp * self.mlp(t2i_modulate(self.norm2(x), shift_mlp, scale_mlp), set_ipdb=set_ipdb))
+        output = self.drop_path(
+            gate_mlp
+            * self.mlp(
+                t2i_modulate(self.norm2(x), shift_mlp, scale_mlp), set_ipdb=set_ipdb
+            )
+        )
         if set_ipdb:
-            import ipdb; ipdb.set_trace()
-            
+            import ipdb
+
+            ipdb.set_trace()
+
         x = x + output
-        
+
         if set_ipdb:
-            import ipdb; ipdb.set_trace()
+            import ipdb
+
+            ipdb.set_trace()
 
         return x
 
@@ -186,7 +205,9 @@ class STDiT(nn.Module):
 
         self.x_embedder = PatchEmbed3D(patch_size, in_channels, hidden_size)
         self.t_embedder = TimestepEmbedder(hidden_size)
-        self.t_block = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True))
+        self.t_block = nn.Sequential(
+            nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
+        )
         self.y_embedder = CaptionEmbedder(
             in_channels=caption_channels,
             hidden_size=hidden_size,
@@ -213,7 +234,9 @@ class STDiT(nn.Module):
                 for i in range(self.depth)
             ]
         )
-        self.final_layer = T2IFinalLayer(hidden_size, np.prod(self.patch_size), self.out_channels)
+        self.final_layer = T2IFinalLayer(
+            hidden_size, np.prod(self.patch_size), self.out_channels
+        )
 
         # init model
         self.initialize_weights()
@@ -253,13 +276,17 @@ class STDiT(nn.Module):
 
         # embedding
         x = self.x_embedder(x)  # [B, N, C]
-        x = rearrange(x, "B (T S) C -> B T S C", T=self.num_temporal, S=self.num_spatial)
+        x = rearrange(
+            x, "B (T S) C -> B T S C", T=self.num_temporal, S=self.num_spatial
+        )
         x = x + self.pos_embed
         x = rearrange(x, "B T S C -> B (T S) C")
 
         # shard over the sequence dim if sp is enabled
         if self.enable_sequence_parallelism:
-            x = split_forward_gather_backward(x, get_sequence_parallel_group(), dim=1, grad_scale="down")
+            x = split_forward_gather_backward(
+                x, get_sequence_parallel_group(), dim=1, grad_scale="down"
+            )
 
         t = self.t_embedder(timestep, dtype=x.dtype)  # [B, C]
         t0 = self.t_block(t)  # [B, 6 * C]
@@ -271,10 +298,13 @@ class STDiT(nn.Module):
         # however, when the prompt length is very short (much smaller than 120, e.g., the UCF101 dataset), using MASK_SELECT=False will incur bad results
         if mask is not None:
             from qdiff.quantizer.dynamic_quantizer import DynamicActQuantizer
+
             # DIRTY, assume that all layers in the stdit model share the same quantization configuration
             MASK_SELECT = True
-            if not isinstance(self.final_layer.linear.act_quantizer, DynamicActQuantizer): # static quant param
-                if self.final_layer.linear.act_quantizer.per_group == 'token':
+            if hasattr(self.final_layer.linear, "act_quantizer") and not isinstance(
+                self.final_layer.linear.act_quantizer, DynamicActQuantizer
+            ):  # static quant param
+                if self.final_layer.linear.act_quantizer.per_group == "token":
                     MASK_SELECT = False
 
             if MASK_SELECT:
@@ -282,22 +312,28 @@ class STDiT(nn.Module):
                 if mask.shape[0] != y.shape[0]:
                     mask = mask.repeat(y.shape[0] // mask.shape[0], 1)
                 mask = mask.squeeze(1).squeeze(1)
-                y = y.squeeze(1).masked_select(mask.unsqueeze(-1) != 0).view(1, -1, x.shape[-1])
+                y = (
+                    y.squeeze(1)
+                    .masked_select(mask.unsqueeze(-1) != 0)
+                    .view(1, -1, x.shape[-1])
+                )
                 y_lens = mask.sum(dim=1).tolist()
             else:
                 ## Ours Version: always 3840 (max_n_prompt*bs)
                 # Interestingly, the original STDiT model takes in [bs*2] as y and [bs] as mask
                 if mask.shape[0] != y.shape[0]:
-                    assert y.shape[0] == 2*mask.shape[0]
+                    assert y.shape[0] == 2 * mask.shape[0]
                     try:
-                        mask_ = mask.repeat([2,1])
+                        mask_ = mask.repeat([2, 1])
                     except:
-                        import ipdb; ipdb.set_trace()
+                        import ipdb
+
+                        ipdb.set_trace()
                 else:
                     mask_ = mask
 
                 y_lens = [y.shape[2]] * y.shape[0]
-                y = y*mask_.unsqueeze(-1).unsqueeze(1)
+                y = y * mask_.unsqueeze(-1).unsqueeze(1)
             y = y.squeeze(1).view(1, -1, x.shape[-1])
         else:
             y_lens = [y.shape[2]] * y.shape[0]
@@ -308,16 +344,20 @@ class STDiT(nn.Module):
             if i == 0:
                 if self.enable_sequence_parallelism:
                     tpe = torch.chunk(
-                        self.pos_embed_temporal, dist.get_world_size(get_sequence_parallel_group()), dim=1
+                        self.pos_embed_temporal,
+                        dist.get_world_size(get_sequence_parallel_group()),
+                        dim=1,
                     )[self.sp_rank].contiguous()
                 else:
-                    tpe = self.pos_embed_temporal # [1, T, C]
+                    tpe = self.pos_embed_temporal  # [1, T, C]
             else:
                 tpe = None
-            x_ = auto_grad_checkpoint(block, x, y, t0, y_lens, tpe, set_ipdb=False) # (i==len(self.blocks)-1)
+            x_ = auto_grad_checkpoint(
+                block, x, y, t0, y_lens, tpe, set_ipdb=False
+            )  # (i==len(self.blocks)-1)
 
             # INFO: profiling the block
-            PROFILE=False
+            PROFILE = False
             if PROFILE:
                 torch.cuda.cudart().cudaProfilerStart()
                 x = auto_grad_checkpoint(block, x, y, t0, y_lens, tpe)
@@ -329,7 +369,9 @@ class STDiT(nn.Module):
             # print(f"{i}-th block, x.shape: {x.shape}; y.shape: {y.shape}")
 
         if self.enable_sequence_parallelism:
-            x = gather_forward_split_backward(x, get_sequence_parallel_group(), dim=1, grad_scale="up")
+            x = gather_forward_split_backward(
+                x, get_sequence_parallel_group(), dim=1, grad_scale="up"
+            )
         # x.shape: [B, N, C]
 
         # final process
@@ -382,7 +424,9 @@ class STDiT(nn.Module):
             (grid_size[0] // self.patch_size[1], grid_size[1] // self.patch_size[2]),
             scale=self.space_scale,
         )
-        pos_embed = torch.from_numpy(pos_embed).float().unsqueeze(0).requires_grad_(False)
+        pos_embed = (
+            torch.from_numpy(pos_embed).float().unsqueeze(0).requires_grad_(False)
+        )
         return pos_embed
 
     def get_temporal_pos_embed(self):
@@ -391,7 +435,9 @@ class STDiT(nn.Module):
             self.input_size[0] // self.patch_size[0],
             scale=self.time_scale,
         )
-        pos_embed = torch.from_numpy(pos_embed).float().unsqueeze(0).requires_grad_(False)
+        pos_embed = (
+            torch.from_numpy(pos_embed).float().unsqueeze(0).requires_grad_(False)
+        )
         return pos_embed
 
     def freeze_not_temporal(self):
@@ -441,32 +487,39 @@ class STDiT(nn.Module):
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
 
-def recursive_find_module(module, prefix='', save_dict={}):
+
+def recursive_find_module(module, prefix="", save_dict={}):
     for name, child_module in module.named_children():
         full_name = prefix + name if prefix else name
         if isinstance(child_module, Attention):
             save_dict[full_name] = child_module
         else:
-            recursive_find_module(child_module, prefix=full_name+'.', save_dict=save_dict)
+            recursive_find_module(
+                child_module, prefix=full_name + ".", save_dict=save_dict
+            )
     return save_dict
 
 
 @MODELS.register_module("STDiT-XL/2")
 def STDiT_XL_2(from_pretrained=None, **kwargs):
-    model = STDiT(depth=28, hidden_size=1152, patch_size=(1, 2, 2), num_heads=16, **kwargs)
+    model = STDiT(
+        depth=28, hidden_size=1152, patch_size=(1, 2, 2), num_heads=16, **kwargs
+    )
     if from_pretrained is not None:
         load_checkpoint(model, from_pretrained)
     # INFO: support separate_qkv when loading the model to fit quantization
     if model.separate_qkv:
-        if any('qkv' in k_ for k_ in model.state_dict().keys()):
+        if any("qkv" in k_ for k_ in model.state_dict().keys()):
             # iterate through all blocks to find all attn layers
             found_modules_d = recursive_find_module(model)
             for name, module in found_modules_d.items():
                 # unpack the qkv layers
                 has_bias = module.qkv.bias is not None
                 qkv_dim = module.qkv.weight.shape[-1]
-                qkv_weight = module.qkv.weight.reshape([3,qkv_dim,qkv_dim]).unbind(0) # [3]
-                qkv_bias = module.qkv.bias.reshape([3,qkv_dim]).unbind(0)
+                qkv_weight = module.qkv.weight.reshape([3, qkv_dim, qkv_dim]).unbind(
+                    0
+                )  # [3]
+                qkv_bias = module.qkv.bias.reshape([3, qkv_dim]).unbind(0)
                 # load into 3 layers
                 module.q = nn.Linear(qkv_dim, qkv_dim, bias=has_bias)
                 module.q.weight = nn.Parameter(qkv_weight[0])
@@ -477,7 +530,7 @@ def STDiT_XL_2(from_pretrained=None, **kwargs):
                 module.v = nn.Linear(qkv_dim, qkv_dim, bias=has_bias)
                 module.v.weight = nn.Parameter(qkv_weight[2])
                 module.v.bias = nn.Parameter(qkv_bias[2])
-                delattr(module,'qkv')
+                delattr(module, "qkv")
                 module.separate_qkv = True
         # if the model are already converted, skip the rest
 

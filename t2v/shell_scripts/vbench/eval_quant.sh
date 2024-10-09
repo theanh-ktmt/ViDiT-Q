@@ -3,7 +3,7 @@ CKPT_PATH=$1
 MODEL_NAME=$2
 
 OPENSORA_CFG="t2v/configs/opensora/vbench/16x256x256.py"
-CMD="python t2v/scripts/inference.py $OPENSORA_CFG"
+CMD="python t2v/scripts/quant_txt2video.py $OPENSORA_CFG"
 OUTPUT="logs/eval/${MODEL_NAME}"
 start=$(date +%s)
 
@@ -15,13 +15,13 @@ function run_vbench() {
   eval $CMD \
     --ckpt_path $CKPT_PATH \
     --outdir $OUTPUT \
-    --prompt_path $VBENCH_PROMPT_PATH
+    --prompt_path $VBENCH_PROMPT_PATH \
+    --part_fp --dataset_type opensora
 }
 
 ### Main
 echo "Running vbench samples ..."
 run_vbench
-
 
 ### End
 end=$(date +%s)

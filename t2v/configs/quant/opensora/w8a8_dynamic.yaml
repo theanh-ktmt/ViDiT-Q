@@ -30,7 +30,8 @@ quant:
             running_stat: False
             dynamic: True
             sym: False
-            n_spatial_token: 1024  # for 16x512x512
+            # n_spatial_token: 1024  # for 16x512x512
+            n_spatial_token: 256  # for 16x256x256
             n_temporal_token: 16
             n_prompt: 120
             smooth_quant: 

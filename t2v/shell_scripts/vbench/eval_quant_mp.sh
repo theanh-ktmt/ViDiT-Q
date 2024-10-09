@@ -5,8 +5,8 @@ MODEL_NAME=$2
 OPENSORA_CFG="t2v/configs/opensora/vbench/16x256x256.py"
 CMD="python t2v/scripts/quant_txt2video_mp.py $OPENSORA_CFG"
 OUTPUT="logs/eval/${MODEL_NAME}"
-MP_W_CONFIG="t2v/configs/quant/W4A8_Naive_Smooth/t20_weight_4_mp.yaml"  # the mixed precision config of weight
-MP_A_CONFIG="t2v/configs/quant/W4A8_Naive_Smooth/t20_act_8_mp.yaml" # the mixed precision config of act
+MP_W_CONFIG="t2v/configs/quant/opensora/mixed_precision/t20_weight_4_mp.yaml"  # the mixed precision config of weight
+MP_A_CONFIG="t2v/configs/quant/opensora/mixed_precision/t20_act_8_mp.yaml" # the mixed precision config of act
 start=$(date +%s)
 
 ### Functions

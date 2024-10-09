@@ -45,6 +45,7 @@ def main():
     dtype = to_torch_dtype(cfg.dtype)
     set_random_seed(seed=cfg.seed)
     prompts = load_prompts(cfg.prompt_path)
+
     prompts = prompts[: cfg.data_num]
     PRECOMPUTE_TEXT_EMBEDS = cfg.get("precompute_text_embeds", None)
 

@@ -258,10 +258,14 @@ def main():
     # ======================================================
     qnn.timestep_wise_quant = False
     sample_idx = 0
+    num_samples = cfg.get("num_samples", 1)
+
     save_dir = opt.save_dir
     os.makedirs(save_dir, exist_ok=True)
+
     if PRECOMPUTE_TEXT_EMBEDS is not None:
         model_args["precompute_text_embeds"] = torch.load(cfg.precompute_text_embeds)
+
     for i in range(0, len(prompts), cfg.batch_size):
         print(
             "========== Prompt {}->{} / {} ==========".format(
@@ -274,7 +278,6 @@ def main():
         ):  # also feed in the idxs for saved text_embeds
             model_args["batch_ids"] = torch.arange(i, i + cfg.batch_size)
 
-        num_samples = cfg.get("num_samples", 1)
         for k in range(num_samples):
             print("> Processing sample {}th...".format(k + 1))
             save_paths = [

@@ -179,3 +179,7 @@ pretrained_models/
 
 # Secret files
 hostfile
+
+# My ignores
+*.save*
+DeepFloyd/*

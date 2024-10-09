@@ -1,18 +1,15 @@
 import os
-import sys
-# sys.path.append(".")
 
-import torch
 import colossalai
+import torch
 import torch.distributed as dist
 from mmengine.runner import set_random_seed
-
 from opensora.datasets import save_sample
 from opensora.registry import MODELS, SCHEDULERS, build_module
 from opensora.utils.config_utils import parse_configs
 from opensora.utils.misc import to_torch_dtype
-from opensora.acceleration.parallel_states import set_sequence_parallel_group
-from colossalai.cluster import DistCoordinator
+
+# sys.path.append(".")
 
 
 def load_prompts(prompt_path):
@@ -33,11 +30,11 @@ def main():
     # coordinator = DistCoordinator()
 
     # if coordinator.world_size > 1:
-        # set_sequence_parallel_group(dist.group.WORLD) 
-        # enable_sequence_parallelism = True
+    # set_sequence_parallel_group(dist.group.WORLD)
+    # enable_sequence_parallelism = True
     # else:
-        # enable_sequence_parallelism = False
-    
+    # enable_sequence_parallelism = False
+
     # ======================================================
     # 2. runtime variables
     # ======================================================
@@ -48,17 +45,18 @@ def main():
     dtype = to_torch_dtype(cfg.dtype)
     set_random_seed(seed=cfg.seed)
     prompts = load_prompts(cfg.prompt_path)
-    prompts = prompts[:cfg.data_num]
-    PRECOMPUTE_TEXT_EMBEDS = cfg.get('precompute_text_embeds', None)
+
+    prompts = prompts[: cfg.data_num]
+    PRECOMPUTE_TEXT_EMBEDS = cfg.get("precompute_text_embeds", None)
 
     # ======================================================
     # 3. build model & load weights
     # =====================================
-    # 
+    #
     # =================
     # 3.1. build scheduler
     scheduler = build_module(cfg.scheduler, SCHEDULERS)
-    
+
     # 3.2. build model
     input_size = (cfg.num_frames, *cfg.image_size)
     vae = build_module(cfg.vae, MODELS)
@@ -77,7 +75,9 @@ def main():
     if PRECOMPUTE_TEXT_EMBEDS is not None:
         text_encoder = None
     else:
-        text_encoder = build_module(cfg.text_encoder, MODELS, device=device)  # T5 must be fp32
+        text_encoder = build_module(
+            cfg.text_encoder, MODELS, device=device
+        )  # T5 must be fp32
         text_encoder.y_embedder = model.y_embedder  # hack for classifier-free guidance
 
     # 3.3. move to device & eval
@@ -88,8 +88,12 @@ def main():
     model_args = dict()
     if cfg.multi_resolution:
         image_size = cfg.image_size
-        hw = torch.tensor([image_size], device=device, dtype=dtype).repeat(cfg.batch_size, 1)
-        ar = torch.tensor([[image_size[0] / image_size[1]]], device=device, dtype=dtype).repeat(cfg.batch_size, 1)
+        hw = torch.tensor([image_size], device=device, dtype=dtype).repeat(
+            cfg.batch_size, 1
+        )
+        ar = torch.tensor(
+            [[image_size[0] / image_size[1]]], device=device, dtype=dtype
+        ).repeat(cfg.batch_size, 1)
         model_args["data_info"] = dict(ar=ar, hw=hw)
 
     # ======================================================
@@ -102,12 +106,14 @@ def main():
     input_data_list = []
     output_data_list = []
     if PRECOMPUTE_TEXT_EMBEDS is not None:
-        model_args['precompute_text_embeds'] = torch.load(cfg.precompute_text_embeds)
+        model_args["precompute_text_embeds"] = torch.load(cfg.precompute_text_embeds)
 
     for i in range(0, len(prompts), cfg.batch_size):
         batch_prompts = prompts[i : i + cfg.batch_size]
-        if PRECOMPUTE_TEXT_EMBEDS is not None:  # also feed in the idxs for saved text_embeds
-            model_args['batch_ids'] = torch.arange(i,i+cfg.batch_size)
+        if (
+            PRECOMPUTE_TEXT_EMBEDS is not None
+        ):  # also feed in the idxs for saved text_embeds
+            model_args["batch_ids"] = torch.arange(i, i + cfg.batch_size)
         samples, cur_calib_data, out_data = scheduler.sample(
             model,
             text_encoder,
@@ -123,7 +129,9 @@ def main():
             if not key in calib_data.keys():
                 calib_data[key] = cur_calib_data[key]
             else:
-                calib_data[key] = torch.cat([cur_calib_data[key], calib_data[key]], dim=1)
+                calib_data[key] = torch.cat(
+                    [cur_calib_data[key], calib_data[key]], dim=1
+                )
 
         input_data_list.append(cur_calib_data)
         output_data_list.append(out_data)

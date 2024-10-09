@@ -1,20 +1,19 @@
 num_frames = 16
 fps = 24 // 3
-image_size = (512, 512)
+image_size = (256, 256)
 
 # Define model
 model = dict(
     type="STDiT-XL/2",
-    space_scale=1.0,
+    space_scale=0.5,
     time_scale=1.0,
-    enable_flashattn=True,  # default is True
-    enable_layernorm_kernel=False,  # default is True
+    enable_flashattn=True,
+    enable_layernorm_kernel=False,
     from_pretrained="PRETRAINED_MODEL",
 )
 vae = dict(
     type="VideoAutoencoderKL",
     from_pretrained="stabilityai/sd-vae-ft-ema",
-    micro_batch_size=128,
 )
 text_encoder = dict(
     type="t5",

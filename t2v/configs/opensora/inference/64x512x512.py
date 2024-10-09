@@ -1,5 +1,5 @@
-num_frames = 64
-fps = 24 // 2
+num_frames = 16
+fps = 24 // 3
 image_size = (512, 512)
 
 # Define model
@@ -7,8 +7,8 @@ model = dict(
     type="STDiT-XL/2",
     space_scale=1.0,
     time_scale=2 / 3,
-    enable_flashattn=False, # default is True
-    enable_layernorm_kernel=False, # default is True
+    enable_flashattn=False,  # default is True
+    enable_layernorm_kernel=False,  # default is True
     from_pretrained="PRETRAINED_MODEL",
 )
 vae = dict(
